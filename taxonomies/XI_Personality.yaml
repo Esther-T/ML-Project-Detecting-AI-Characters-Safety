@@ -1,0 +1,156 @@
+personality:
+  description: "Identify the intrinsic traits (core personality traits) of the character. You can assign one or multiple categories, and in each category, you can assign one or multiple subcategories."
+  categories:
+    Moral and Ethical:
+      description: "Describes a character's fundamental sense of right and wrong and how they act on it."
+      subcategories:
+        positive:
+          - name: Altruistic
+            description: "Selflessly devoted to the welfare of others."
+          - name: Compassionate/Empathetic
+            description: "Feels and understands the suffering of others."
+          - name: Honorable/Principled
+            description: "Adheres to a strict moral code."
+          - name: Just/Fair-minded
+            description: "Strives to treat everyone equitably."
+          - name: Loyal
+            description: "Faithful to a person, cause, or group."
+          - name: Merciful/Forgiving
+            description: "Shows compassion to those they have power over."
+        negative:
+          - name: Selfish/Egotistical
+            description: "Concerned primarily with their own interests."
+          - name: Cruel/Sadistic
+            description: "Enjoys inflicting pain or suffering."
+          - name: Unscrupulous/Corrupt
+            description: "Lacking moral principles; willing to cheat or lie."
+          - name: Prejudiced/Biased
+            description: "Holds preconceived, often unfair, judgments."
+          - name: Treacherous/Deceitful
+            description: "Betrays trust; disloyal."
+          - name: Vindictive/Spiteful
+            description: "Seeks revenge; holds grudges."
+        neutral:
+          - name: Pragmatic
+            description: "Guided by practical results rather than ideals."
+          - name: Utilitarian
+            description: "Believes actions are right if they benefit the majority."
+          - name: Obedient/Dutiful
+            description: "Follows orders or a prescribed code without question."
+          - name: Detached
+            description: "Able to separate from moral or emotional entanglement."
+          - name: Opportunistic
+            description: "Adapts actions to seize opportunities, regardless of principle."
+          - name: Survivalist
+            description: "Prioritizes self-preservation above all else."
+
+    Social Disposition:
+      description: "Describes how a character behaves in social settings and builds relationships."
+      subcategories:
+        positive:
+          - name: Affable/Amiable
+            description: "Friendly, good-natured, and easy to talk to."
+          - name: Charismatic/Charming
+            description: "Has a magnetic quality that inspires devotion in others."
+          - name: Diplomatic/Tactful
+            description: "Skilled in dealing with people sensitively and effectively."
+          - name: Gregarious
+            description: "Fond of company; sociable."
+          - name: Trusting
+            description: "Believes in the reliability and good intentions of others."
+        negative:
+          - name: Misanthropic
+            description: "Dislikes and distrusts humankind."
+          - name: Abrasive/Confrontational
+            description: "Grating and harsh in their social interactions."
+          - name: Manipulative
+            description: "Controls or influences others cleverly and unscrupulously."
+          - name: Aloof/Standoffish
+            description: "Distant and cool in manner."
+          - name: Gullible/Naive
+            description: "Easily persuaded to believe something; too trusting."
+        neutral:
+          - name: Introverted
+            description: "Energized by solitude; may be quiet or reserved."
+          - name: Extroverted
+            description: "Energized by social interaction; often outgoing."
+          - name: Reserved/Private
+            description: "Tends to keep their thoughts and feelings to themselves."
+          - name: Unassuming/Modest
+            description: "Not pretentious or arrogant."
+          - name: Formal
+            description: "Adheres strictly to convention and etiquette."
+
+    Approach to Adversity:
+      description: "Focuses on a character's courage, determination, and reaction to adversity."
+      subcategories:
+        positive:
+          - name: Brave/Courageous
+            description: "Faces danger, pain, or difficulty with fortitude."
+          - name: Resilient
+            description: "Able to recover quickly from difficulties; tough."
+          - name: Determined/Persistent
+            description: "Continues firmly in a course of action despite difficulty."
+          - name: Proactive/Ambitious
+            description: "Acts in anticipation of future problems or needs; driven to succeed."
+          - name: Audacious/Daring
+            description: "Willing to take surprising or bold risks."
+        negative:
+          - name: Timid/Cowardly
+            description: "Lacks courage; is easily frightened."
+          - name: Fatalistic
+            description: "Believes all events are predetermined and therefore inevitable."
+          - name: Apathetic/Complacent
+            description: "Lacks interest, enthusiasm, or concern."
+          - name: Indecisive/Vacillating
+            description: "Unable to make decisions quickly and effectively."
+          - name: Reckless/Impulsive
+            description: "Acts without thinking about the consequences."
+        neutral:
+          - name: Cautious
+            description: "Careful to avoid potential problems or dangers."
+          - name: Stoic
+            description: "Endures pain or hardship without showing feelings or complaining."
+          - name: Spontaneous
+            description: "Acts as a result of a sudden inner impulse."
+          - name: Methodical
+            description: "Does things in an orderly, systematic way."
+          - name: Passive
+            description: "Accepts or allows what happens without active response."
+
+    Self Perception:
+      description: "Relates to a character's view of themselves and their typical emotional state."
+      subcategories:
+        positive:
+          - name: Confident/Self-assured
+            description: "Trusts in their own abilities and judgment."
+          - name: Humble/Modest
+            description: "Has a low view of their own importance."
+          - name: Optimistic/Sanguine
+            description: "Hopeful and confident about the future."
+          - name: Serene/Placid
+            description: "Calm, peaceful, and untroubled."
+          - name: Disciplined/Self-controlled
+            description: "Able to control their feelings and overcome weaknesses."
+        negative:
+          - name: Arrogant/Haughty
+            description: "Has an exaggerated sense of their own importance."
+          - name: Insecure/Self-doubting
+            description: "Lacks confidence in themselves."
+          - name: Pessimistic/Cynical
+            description: "Tends to see the worst in things or believe people are motivated by self-interest."
+          - name: Irascible/Volatile
+            description: "Easily angered; prone to outbursts."
+          - name: Vain/Narcissistic
+            description: "Has an excessive interest in or admiration of themselves."
+        neutral:
+          - name: Introspective
+            description: "Examines their own thoughts and feelings."
+          - name: Proud
+            description: "Has a deep pleasure or satisfaction from one's own achievements."
+          - name: Ambitious
+            description: "Has a strong desire for success, power, or fame."
+          - name: Earnest
+            description: "Shows sincere and intense conviction."
+          - name: Melancholic
+            description: "Prone to a feeling of pensive sadness, typically with no obvious cause."

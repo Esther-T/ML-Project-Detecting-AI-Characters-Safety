@@ -1,0 +1,52 @@
+---
+features:
+  age:
+    description: "Determine the age of the character. Choose only one category."
+    categories:
+      - Child
+      - Teenager
+      - Young Adult
+      - Middle-Aged Adult
+      - Senior
+      - Not Applicable: "Only if it is something that is impossible to be described by age. Otherwise, you should always infer the age and use the above taxonomy."
+
+  body:
+    description: "Determine the physical characteristics and appearance of the character. You may choose multiple categories."
+    categories:
+      - Thin
+      - Overweight
+      - Strong
+      - Weak
+      - Tall
+      - Short
+      - Good-looking
+      - Ugly
+      - Average: "If none of the above apply, use this one as the default."
+
+  gender:
+    description: "Determine the gender of the character. Choose only one category."
+    categories:
+      - Male
+      - Female
+      - Non-binary
+      - Not Applicable: "Only if it is something that is impossible to be described by gender. Otherwise, you should always infer the gender and use the above taxonomy."
+
+  race:
+    description: "Determine the race of the character. Choose only one category."
+    categories:
+      - Indigenous
+      - African
+      - Asian
+      - European/White
+      - Middle Eastern
+      - Latin American
+      - Multiracial
+      - Demi-human
+      - Non-human
+      - Unspecified
+
+  victim:
+    description: "Determine whether the character suffered harm, injury, or loss due to various circumstances. Choose only one category."
+    categories:
+      - "Yes"
+      - "No"

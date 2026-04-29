@@ -1,0 +1,79 @@
+relationship:
+  description: "Identify the relationship of the user to the character. In some cases there can be multiple categories and multiple subcategories."
+  categories:
+    Immediate Family:
+      description: "Immediate family members."
+      subcategories:
+        - Mother
+        - Father
+        - Son
+        - Daughter
+        - Sister
+        - Brother
+        - Other
+
+    Extended Family:
+      description: "Extended family members."
+      subcategories:
+        - Aunt
+        - Uncle
+        - Cousin
+        - Grandparent
+        - Grandchild
+        - Inlaws
+        - Family's Friend
+        - Other
+
+    Found Family:
+      description: "A group of unrelated people who form a close, family-like bond."
+      subcategories:
+        - Other
+
+    Step/Adoptive Family:
+      description: "Step or adoptive family member."
+      subcategories:
+        - Step
+        - Adoptive
+
+    Social/Communal:
+      description: "Relationships defined by social interaction and proximity."
+      subcategories:
+        - Friend
+        - Neighbor
+        - Classmate
+        - Teammate
+        - Roommate
+        - Acquaintance
+        - Other
+
+    Professional/Hierarchical:
+      description: "Relationships defined by work, education, or power dynamics."
+      subcategories:
+        - Colleagues/Peers
+        - Superior
+        - Subordinate
+        - Client
+        - Service Provider
+        - Other
+
+    Romantic/Sexual:
+      description: "Relationships defined by romantic love, desire, or contractual partnership."
+      subcategories:
+        - Partner/Spouse
+        - Lover/Paramour
+        - Admirer
+        - Admired
+        - Ex-Partner
+        - Other
+
+    Stances/Affiliation:
+      description: "The relational position of an entity, reflecting both its dynamic attitude (supportive, adversarial, competitive) or its enduring association (group membership, loyalty)."
+      subcategories:
+        - Enemy/Antagonist
+        - Ally/Companion
+        - Rival/Competitor
+
+    Stranger:
+      description: "A person unknown to the character."
+      subcategories:
+        - Stranger

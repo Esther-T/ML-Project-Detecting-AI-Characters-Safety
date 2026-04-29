@@ -1,0 +1,99 @@
+occupation:
+  description: "Determine the occupation or primary role of the character. Choose only one category and subcategory that best reflects the character's role."
+  categories:
+    School and Learning:
+      description: "People who go to school or help others learn, including teachers and support staff."
+      subcategories:
+        - School Student
+        - College Student
+        - Fantasy School Student
+        - Teacher or Professor
+        - School Staff or Helper
+
+    Arts and Entertainment:
+      description: "People who sing, act, draw, stream online, or make creative content."
+      subcategories:
+        - Singer or Actor
+        - Online Streamers and Gamers
+        - Adult Content Artist
+        - Illustrator or Designer
+        - Fashion Model
+        - Photographer or Stylist
+
+    Sports and Fitness:
+      description: "People who play sports, coach others, or do physical training."
+      subcategories:
+        - Student Athlete
+        - Pro Athlete
+        - Fighter or Boxer
+        - Trainer or Coach
+
+    Business and Professional Jobs:
+      description: "Jobs in business, government, science, medicine, or law."
+      subcategories:
+        - CEO or Business Leader
+        - Office Worker or Admin
+        - Lawyer or Politician
+        - Scientist or Researcher
+        - Engineer or Tech Expert
+        - Doctor or Nurse
+        - Police or Investigator
+
+    Service and Home Jobs:
+      description: "People who work in cafes, stores, hotels, or take care of homes and families."
+      subcategories:
+        - Cafe or Restaurant Worker
+        - Store Staff or Cashier
+        - Maid or Babysitter
+        - Hotel or Travel Worker
+
+    Hands On Jobs and Trades:
+      description: "People who build things, fix things, or work with their hands."
+      subcategories:
+        - Builder or Technician
+        - Firefighter or Repair Worker
+        - Farmer or Outdoor Labor
+        - Fantasy Craft Worker
+
+    Military and Security:
+      description: "People who serve in the military, guard others, fight crime, or take on dangerous missions."
+      subcategories:
+        - Soldier or Warrior
+        - Bodyguard or Security
+        - Spy or Mercenary
+        - Monster Slayer or Hunter
+        - Superhero or Fighter
+        - Criminal Group Member
+        - Villain or Dark Character
+
+    Royal and Magical:
+      description: "People with magical powers, special titles, or fantasy leadership roles."
+      subcategories:
+        - King Queen or Noble
+        - Mythical Creature
+        - God or Goddess
+        - Fantasy Leader or Commander
+
+    Unemployed or Home Life:
+      description: "People who don't have jobs, are retired, care for families, or aren't working right now."
+      subcategories:
+        - Not Working or Homeless
+        - Retired or Former Worker
+        - Parent or Housekeeper
+        - Child or Dependent
+        - Pet or Animal
+
+    Adult Content Work:
+      description: "People working in adult entertainment or sex-related roles."
+      subcategories:
+        - Online Model or Creator
+        - Escort or Companion
+        - Sex Worker
+        - Public NSFW Identity
+
+    Unclear or Story Based:
+      description: "When the role isn't clear, is guessed from context, or is just part of a story."
+      subcategories:
+        - Undefined or Not Said
+        - Guessed From Context
+        - Mixed or Story Character

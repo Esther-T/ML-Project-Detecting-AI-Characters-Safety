@@ -1,0 +1,15 @@
+TASK:
+In the context of an AI role-play platform such as Character.ai, given the description, descriptive tags of a character, and a scenario, analyze the information to infer the following details. In the description, there is usually a user, and a character or multiple characters the user is talking to. You should remember to analyze the character, not the user.
+
+ANALYSIS POINT:
+- occupation: Determine the occupation or primary role of the character. You should choose only one category and sub category that best reflects the character's role.
+
+TAXONOMY:
+{taxonomy}
+
+INPUT:
+{character_input}
+
+OUTPUT FORMAT:
+Return the result in JSON form as defined below. Do not include any preamble or markdown backticks, return only the JSON object.
+{{"category": ..., "sub_category": ...}}

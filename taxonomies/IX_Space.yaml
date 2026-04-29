@@ -1,0 +1,58 @@
+space:
+  description: "Identify the place where the scene is set. Assign only one category and subcategory."
+  categories:
+    Domestic Spaces:
+      description: "Private, intimate settings related to home and family life where characters' personal stories unfold. Examples include house, apartment, mansion. Distinguish whether it is the Domestic Spaces of the user, or the Domestic Spaces of the character."
+      subcategories:
+        - Domestic Spaces (User)
+        - Domestic Spaces (Character)
+        - Domestic Spaces (Both)
+        - Other
+
+    Social and Institutional Places:
+      description: "Organized, public structures that govern or shape community life, knowledge, health, and justice."
+      subcategories:
+        - School/University
+        - Hospital
+        - Prison
+        - Religion Place
+        - Workplace
+        - Fantasy
+        - Other
+
+    Public and Commercial Spaces:
+      description: "Areas of public gathering, commerce, and social interaction where characters engage with the broader community."
+      subcategories:
+        - Town/Village
+        - City
+        - Tavern/Bar/Cafe
+        - Store/Market
+        - Hotel
+        - Fantasy
+        - Other
+
+    Transitional and Liminal Spaces:
+      description: "In-between spaces that are defined by movement."
+      subcategories:
+        - Stations
+        - Vehicles (Public)
+        - Vehicles (Private)
+        - Fantasy
+        - Other
+
+    Natural and Wilderness Environments:
+      description: "Settings dominated by the natural world."
+      subcategories:
+        - Forest
+        - Sea/Ocean
+        - River
+        - Mountain
+        - Desert
+        - Island
+        - Fantasy
+        - Other
+
+    Other/Unspecified:
+      description: "If all the above categories do not apply."
+      subcategories:
+        - Other/Unspecified
