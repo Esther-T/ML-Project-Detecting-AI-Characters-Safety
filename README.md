@@ -11,6 +11,7 @@ AI character platforms raise significant safety concerns due to the harmful cont
 
 ```
 ├── data/
+│   ├── annotated_checkpoint.json         # LLM annotation cache; append-only, supports resume
 │   ├── annotated_with_nulls.json         # Raw LLM annotation output
 │   ├── best_models.pkl                   # Saved traditional classifier models
 │   ├── df.feather                        # Original data from Wei et al. (2025)

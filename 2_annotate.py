@@ -2,150 +2,140 @@
 annotate.py
 -----------
 Usage:
-    python annotate.py            # full run
-    python annotate.py --dry-run  # preview 3 rows, no API calls
-    python annotate.py --status   # show quota, then exit
+    pip install pandas numpy pyyaml pyarrow python-dotenv google-genai tqdm
+
+    Create a .env file in the same directory as this script with:
+        GEMINI_API_KEYS=key1,key2,key3,...
 """
 
-import argparse
-import json
 import os
+import json
 import time
-from datetime import date
-
-import pandas as pd
 import yaml
+import numpy as np
+import pandas as pd
+from tqdm import tqdm
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-from tqdm import tqdm
 
-load_dotenv()
+# 1. CONFIG 
+BASE_PATH      = os.path.expanduser("~/ml_project")         
+DATA_PATH      = os.path.join(BASE_PATH, "data")
+TAXONOMY_PATH  = os.path.join(BASE_PATH, "taxonomies")
+PROMPT_PATH    = os.path.join(BASE_PATH, "prompts")
 
-# ============================================================
-# CONFIG — single key, single model
-# ============================================================
+CHECKPOINT_PATH       = os.path.join(DATA_PATH, "annotated_checkpoint.json") 
+CLEANED_WITH_NULLS    = os.path.join(DATA_PATH, "annotated_with_nulls.json") 
 
-API_KEY = os.getenv("GEMINI_KEY", "").strip()
-MODEL   = "gemini-3.1-flash-lite-preview"
+# 2. LOAD DATASET
+file_path = os.path.join(DATA_PATH, "ml_df_part1.feather") # replace with ml_df.part2.feather
+df = pd.read_feather(file_path)
+print("Dataset loaded:")
+print(df.info())
 
-if not API_KEY:
-    raise ValueError("No API key found. Set GEMINI_KEY in your .env file.")
+# 3. LOAD TAXONOMIES
+yaml_files = {}
+for filename in sorted(os.listdir(TAXONOMY_PATH)):
+    if filename.endswith(".yaml"):
+        filepath = os.path.join(TAXONOMY_PATH, filename)
+        with open(filepath, "r") as f:
+            yaml_files[filename] = yaml.safe_load(f)
+        print(f"Loaded taxonomy: {filename}")
 
-FEATHER_INPUT    = "ml_df_part1.feather"
-FEATHER_OUTPUT   = "annotated_part1.feather"
-QUOTA_LOG        = "quota_log.json"
-TAXONOMY_DIR     = "taxonomies"
-PROMPT_DIR       = "prompts"
-CHECKPOINT_EVERY = 10
-MAX_RETRIES      = 3
-DRY_RUN_ROWS     = 3
+demographic_taxonomy  = yaml_files["VII_Demographic.yaml"]
+occupation_taxonomy   = yaml_files["VIII_Occupation.yaml"]
+space_taxonomy        = yaml_files["IX_Space.yaml"]
+relationship_taxonomy = yaml_files["X_Relationship.yaml"]
+personality_taxonomy  = yaml_files["XI_Personality.yaml"]
 
-SLEEP_BETWEEN_DIMS = 2   # seconds between each of the 6 dimension calls
-SLEEP_BETWEEN_ROWS = 5  # seconds between rows
-SLEEP_ON_ERROR     = 10  # seconds after a non-429 error
+# 4. LOAD PROMPTS
+prompt_files = {}
+for filename in sorted(os.listdir(PROMPT_PATH)):
+    if filename.endswith(".txt"):
+        filepath = os.path.join(PROMPT_PATH, filename)
+        with open(filepath, "r") as f:
+            prompt_files[filename] = f.read()
+        print(f"Loaded prompt: {filename}")
 
-ANNOTATION_COLS = [
-    "demographic", "occupation", "space",
-    "relationship", "favorability", "personality"
-]
+demographic_prompt  = prompt_files["demographic_prompt.txt"]
+occupation_prompt   = prompt_files["occupation_prompt.txt"]
+space_prompt        = prompt_files["space_prompt.txt"]
+relationship_prompt = prompt_files["relationship_prompt.txt"]
+favorability_prompt = prompt_files["favorability_prompt.txt"]
+personality_prompt  = prompt_files["personality_prompt.txt"]
 
-# ============================================================
-# Quota tracker — single key version
-# ============================================================
+print("\nAll external data loaded successfully!")
 
-def load_quota_log():
-    today = str(date.today())
-    if os.path.exists(QUOTA_LOG):
-        with open(QUOTA_LOG) as f:
-            log = json.load(f)
-        if log.get("date") != today:
-            log = {"date": today, "usage": 0, "exhausted": False}
-    else:
-        log = {"date": today, "usage": 0, "exhausted": False}
-    return log
+# 5. PREPROCESS
+df["is_unsafe"] = df["judge_score"] >= 3
 
-def save_quota_log(log):
-    with open(QUOTA_LOG, "w") as f:
-        json.dump(log, f, indent=2)
+bot_df = df.groupby("bot").agg(
+    raw_unsafety_score=("is_unsafe", "mean"),
+    platform=("platform", "first"),
+    group=("group", "first"),
+    NSFW=("NSFW", "first"),
+    description=("description", "first"),
+    tags=("tags", "first"),
+    scenario=("scenario", "first"),
+).reset_index()
 
-def increment_usage(log):
-    log["usage"] += 1
-    save_quota_log(log)
+platform_means = bot_df.groupby("platform")["raw_unsafety_score"].mean().reset_index()
+platform_means.rename(columns={"raw_unsafety_score": "platform_mean"}, inplace=True)
+bot_df = bot_df.merge(platform_means, on="platform", how="left")
+bot_df["normalized_score"] = bot_df["raw_unsafety_score"] - bot_df["platform_mean"]
 
-def mark_exhausted(log):
-    log["exhausted"] = True
-    save_quota_log(log)
+mean_score       = bot_df["normalized_score"].mean()
+std_score        = bot_df["normalized_score"].std()
+unsafer_threshold = mean_score + std_score
+safer_threshold   = mean_score
 
-def print_quota_status(log):
-    status = "EXHAUSTED" if log["exhausted"] else "ok"
-    print(f"\n{'─'*40}")
-    print(f"  Quota — {log['date']}")
-    print(f"  Key    : ...{API_KEY[-6:]}  [{MODEL}]  {status}")
-    print(f"  Calls  : {log['usage']} used today")
-    print(f"{'─'*40}\n")
+def assign_y_label(score):
+    if score >= unsafer_threshold:
+        return 1
+    elif score < safer_threshold:
+        return 0
+    return np.nan
 
-# ============================================================
-# Load data, taxonomies, prompts
-# ============================================================
+bot_df["y"] = bot_df["normalized_score"].apply(assign_y_label)
+ml_df = bot_df.dropna(subset=["y"]).copy()
 
-def load_data():
-    if os.path.exists(FEATHER_OUTPUT):
-        df = pd.read_feather(FEATHER_OUTPUT)
-        print(f"Resuming: {FEATHER_OUTPUT}")
-    else:
-        df = pd.read_feather(FEATHER_INPUT)
-        for col in ANNOTATION_COLS:
-            df[col] = None
-        print(f"Fresh start — {len(df)} rows from {FEATHER_INPUT}")
-    return df
+print(f"Total Characters: {len(bot_df)}")
+print(f"Characters kept for ML training: {len(ml_df)}")
+print("\nDistribution of y:")
+print(ml_df["y"].value_counts())
 
-def load_taxonomies():
-    yaml_files = {}
-    for fn in sorted(os.listdir(TAXONOMY_DIR)):
-        if fn.endswith(".yaml"):
-            with open(os.path.join(TAXONOMY_DIR, fn)) as f:
-                yaml_files[fn] = yaml.safe_load(f)
-    return {
-        "demographic":  yaml_files["VII_Demographic.yaml"],
-        "occupation":   yaml_files["VIII_Occupation.yaml"],
-        "space":        yaml_files["IX_Space.yaml"],
-        "relationship": yaml_files["X_Relationship.yaml"],
-        "personality":  yaml_files["XI_Personality.yaml"],
-    }
+# 6. API KEY SETUP  (reads from .env file)
+load_dotenv() 
 
-def load_prompts():
-    prompt_files = {}
-    for fn in sorted(os.listdir(PROMPT_DIR)):
-        if fn.endswith(".txt"):
-            with open(os.path.join(PROMPT_DIR, fn)) as f:
-                prompt_files[fn] = f.read()
-    return {
-        "demographic":  prompt_files["demographic_prompt.txt"],
-        "occupation":   prompt_files["occupation_prompt.txt"],
-        "space":        prompt_files["space_prompt.txt"],
-        "relationship": prompt_files["relationship_prompt.txt"],
-        "favorability": prompt_files["favorability_prompt.txt"],
-        "personality":  prompt_files["personality_prompt.txt"],
-    }
+api_keys_env = os.getenv("GEMINI_API_KEYS", "")
+raw_keys = [k.strip() for k in api_keys_env.split(",") if k.strip()]
 
-# ============================================================
-# LLM call — single key, no rotation
-# ============================================================
+if not raw_keys:
+    raise ValueError(
+        "No API keys found. Create a .env file with:\n"
+        "  GEMINI_API_KEYS=your_key1,your_key2,..."
+    )
 
-client = genai.Client(api_key=API_KEY)
+MODEL_NAME = "gemini-3.1-flash-lite"
 
+API_KEYS = [{"key": k, "model": MODEL_NAME} for k in raw_keys]
+key_index = 0
+
+print(f"\nLoaded {len(API_KEYS)} API key(s), model: {MODEL_NAME}")
+
+# 7. ANNOTATION HELPERS
 def prepare_character_input(row):
-    return yaml.dump({
-        "tags":        row["tags"],
+    character = {
+        "tags": row["tags"],
         "description": row["description"] if pd.notna(row["description"]) else "",
         "scenario":    row["scenario"]    if pd.notna(row["scenario"])    else "",
-    }, allow_unicode=True)
+    }
+    return yaml.dump(character, allow_unicode=True)
 
 
-def call_llm(prompt_template, character_input, taxonomy, log, dry_run=False):
-    if dry_run:
-        return {"_dry_run": True}
+def call_llm(prompt_template, character_input, taxonomy=None, max_retries=3):
+    global key_index
 
     if taxonomy is not None:
         filled_prompt = prompt_template.format(
@@ -155,159 +145,125 @@ def call_llm(prompt_template, character_input, taxonomy, log, dry_run=False):
     else:
         filled_prompt = prompt_template.format(character_input=character_input)
 
-    for attempt in range(MAX_RETRIES):
-        if log["exhausted"]:
-            print("Key exhausted — stopping.")
-            return None
+    for attempt in range(max_retries):
+        for _ in range(len(API_KEYS)):
+            try:
+                current_entry = API_KEYS[key_index]
+                client = genai.Client(api_key=current_entry["key"])
 
-        try:
-            response = client.models.generate_content(
-                model=MODEL,
-                contents=filled_prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json"
-                ),
-            )
-            increment_usage(log)
+                response = client.models.generate_content(
+                    model=current_entry["model"],
+                    contents=filled_prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json"
+                    ),
+                )
 
-            text = response.text.strip() if response.text else ""
-            text = text.replace("```json", "").replace("```", "").strip()
+                text = response.text.strip() if response.text else ""
+                text = text.replace("```json", "").replace("```", "").strip()
+                return json.loads(text)
 
-            if not text:
-                print(f"  Empty response (attempt {attempt+1}/{MAX_RETRIES}), retrying...")
-                time.sleep(SLEEP_BETWEEN_DIMS)
-                continue
+            except json.JSONDecodeError:
+                print(f"  JSON parse error (attempt {attempt + 1}), retrying...")
+                time.sleep(2)
+            except Exception as e:
+                print(f"  API error on key {key_index} (attempt {attempt + 1}): {e}")
+                key_index = (key_index + 1) % len(API_KEYS)
+                time.sleep(2)
 
-            return json.loads(text)
-
-        except json.JSONDecodeError:
-            print(f"  JSON parse error (attempt {attempt+1}/{MAX_RETRIES}), retrying...")
-            time.sleep(SLEEP_BETWEEN_DIMS)
-
-        except Exception as e:
-            err = str(e)
-            if "429" in err or "RESOURCE_EXHAUSTED" in err:
-                print("  Quota hit — marking exhausted.")
-                mark_exhausted(log)
-                return None
-            else:
-                print(f"  API error attempt {attempt+1}/{MAX_RETRIES}: {e}")
-                time.sleep(SLEEP_ON_ERROR)
-
-    print("  All retries failed.")
+    print("  All retries failed, returning None")
     return None
 
 
-def annotate_character(row, prompts, taxonomies, log, dry_run=False):
-    char_input = prepare_character_input(row)
-    results = {}
-    dims = [
-        ("demographic",  "demographic",  "demographic"),
-        ("occupation",   "occupation",   "occupation"),
-        ("space",        "space",        "space"),
-        ("relationship", "relationship", "relationship"),
-        ("favorability", "favorability", None),
-        ("personality",  "personality",  "personality"),
-    ]
-    for col, prompt_key, tax_key in dims:
-        results[col] = call_llm(
-            prompts[prompt_key],
-            char_input,
-            taxonomies.get(tax_key),
-            log,
-            dry_run,
-        )
-        if not dry_run:
-            time.sleep(SLEEP_BETWEEN_DIMS)
-    return results
+def annotate_character(row):
+    character_input = prepare_character_input(row)
+    return {
+        "demographic":  call_llm(demographic_prompt,  character_input, demographic_taxonomy),
+        "occupation":   call_llm(occupation_prompt,   character_input, occupation_taxonomy),
+        "space":        call_llm(space_prompt,         character_input, space_taxonomy),
+        "relationship": call_llm(relationship_prompt, character_input, relationship_taxonomy),
+        "favorability": call_llm(favorability_prompt, character_input, taxonomy=None),
+        "personality":  call_llm(personality_prompt,  character_input, personality_taxonomy),
+    }
 
-# ============================================================
-# Dry run
-# ============================================================
+# 8. RUN ANNOTATION WITH CHECKPOINTING
+if os.path.exists(CHECKPOINT_PATH):
+    with open(CHECKPOINT_PATH, "r") as f:
+        all_annotations = json.load(f)
+    print(f"Resuming from checkpoint: {len(all_annotations)} already annotated")
+else:
+    all_annotations = {}
+    print("Starting fresh annotation")
 
-def run_dry_run(df, prompts, taxonomies, log):
-    print(f"\n{'='*50}")
-    print(f"  DRY RUN — {DRY_RUN_ROWS} rows, no API calls")
-    print(f"{'='*50}\n")
-    sample = df.sample(n=min(DRY_RUN_ROWS, len(df)), random_state=42)
-    for i, (_, row) in enumerate(sample.iterrows()):
-        print(f"--- Row {i+1} ---")
-        print(f"Bot      : {str(row['bot'])[:40]}")
-        print(f"Tags     : {str(row['tags'])[:80]}")
-        print(f"Desc     : {str(row['description'])[:80]}")
-        result = annotate_character(row, prompts, taxonomies, log, dry_run=True)
-        print(f"Mock: {result}\n")
-    row        = sample.iloc[0]
-    char_input = prepare_character_input(row)
-    filled     = prompts["demographic"].format(
-        taxonomy=yaml.dump(taxonomies["demographic"], allow_unicode=True),
-        character_input=char_input,
-    )
-    print("--- Sample prompt (demographic, first 600 chars) ---")
-    print(filled[:600])
-    print("...\nDry run done.")
+already_done = set(all_annotations.keys())
+remaining = ml_df[~ml_df["bot"].isin(already_done)].reset_index(drop=True)
+print(f"Remaining to annotate: {len(remaining)} characters")
 
-# ============================================================
-# Main
-# ============================================================
+BATCH_SIZE  = 1030
+failed_bots = []
+batch = remaining.head(BATCH_SIZE)
+print(f"Running batch of {len(batch)} characters")
 
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--status",  action="store_true")
-    args = parser.parse_args()
+for idx, row in tqdm(batch.iterrows(), total=len(batch), desc="Annotating"):
+    bot_name = row["bot"]
+    result   = annotate_character(row)
 
-    log = load_quota_log()
+    if all(v is None for v in result.values()):
+        failed_bots.append(bot_name)
+        continue
 
-    if args.status:
-        print_quota_status(log)
-        return
+    all_annotations[bot_name] = result
 
-    prompts    = load_prompts()
-    taxonomies = load_taxonomies()
-    df         = load_data()
-    print_quota_status(log)
+    with open(CHECKPOINT_PATH, "w") as f:
+        json.dump(all_annotations, f)
 
-    if args.dry_run:
-        run_dry_run(df, prompts, taxonomies, log)
-        return
+    time.sleep(4)
 
-    if log["exhausted"]:
-        print("Key exhausted for today. Come back tomorrow!")
-        return
+print(f"\nBatch complete!")
+print(f"Total annotated so far: {len(all_annotations)}")
+print(f"Failed in this batch:   {len(failed_bots)}")
+print(f"Remaining after batch:  {len(ml_df) - len(all_annotations)}")
 
-    unannotated_mask = df[ANNOTATION_COLS].isnull().all(axis=1)
-    unannotated_idx  = df[unannotated_mask].index.tolist()
-    print(f"Rows to annotate: {len(unannotated_idx)} / {len(df)}\n")
+# 9. CLEAN ANNOTATIONS
+ALL_FIELDS = ["demographic", "occupation", "space", "relationship", "favorability", "personality"]
 
-    failed_bots = []
+with open(CHECKPOINT_PATH, "r") as f:
+    raw_annotations = json.load(f)
+print(f"\nLoaded {len(raw_annotations)} annotated characters for cleaning")
 
-    for count, idx in enumerate(tqdm(unannotated_idx, desc="Annotating")):
-        if log["exhausted"]:
-            print("\nKey exhausted — stopping.")
-            break
+def is_complete_failure(ann):
+    return all(ann.get(field) is None for field in ALL_FIELDS)
 
-        row    = df.loc[idx]
-        result = annotate_character(row, prompts, taxonomies, log)
+complete_failures = [bot for bot, ann in raw_annotations.items() if is_complete_failure(ann)]
+print(f"Complete failures (all 6 null): {len(complete_failures)}")
 
-        if all(v is None for v in result.values()):
-            failed_bots.append(row["bot"])
+FIELD_DEFAULTS = {
+    "demographic":  {"age": "Unknown", "body": ["Unknown"], "gender": "Unknown",
+                     "race": "Unknown", "victim": "Unknown"},
+    "occupation":   {"category": "None", "sub_category": "None"},
+    "space":        {"category": "None", "sub_category": "None"},
+    "relationship": [{"category": "None", "sub_category": "None"}],
+    "personality":  [{"category": "None", "polarity": "neutral", "sub_category": "None"}],
+    "favorability": {"favorability": None},
+}
 
-        for col in ANNOTATION_COLS:
-            df.at[idx, col] = json.dumps(result[col]) if result[col] is not None else None
+def fill_nulls(ann):
+    filled = ann.copy()
+    for field, default in FIELD_DEFAULTS.items():
+        if filled.get(field) is None:
+            filled[field] = default
+    return filled
 
-        time.sleep(SLEEP_BETWEEN_ROWS)
+cleaned_with_nulls = {
+    bot: fill_nulls(ann)
+    for bot, ann in raw_annotations.items()
+    if bot not in complete_failures
+}
 
-        if (count + 1) % CHECKPOINT_EVERY == 0:
-            df.reset_index(drop=True).to_feather(FEATHER_OUTPUT)
-            print(f"  [checkpoint] {count+1} rows saved")
+with open(CLEANED_WITH_NULLS, "w") as f:
+    json.dump(cleaned_with_nulls, f, indent=2)
 
-    df.reset_index(drop=True).to_feather(FEATHER_OUTPUT)
-    print_quota_status(log)
-    print(f"Failed bots: {len(failed_bots)}")
-    if failed_bots:
-        print(failed_bots)
-
-
-if __name__ == "__main__":
-    main()
+print(f"\nOriginal:                   {len(raw_annotations)} characters")
+print(f"Complete failures dropped:  {len(complete_failures)} characters")
+print(f"Final (nulls filled):       {len(cleaned_with_nulls)} characters")
+print(f"\nOutput written to: {CLEANED_WITH_NULLS}")
