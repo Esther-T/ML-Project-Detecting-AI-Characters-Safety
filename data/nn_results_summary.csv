@@ -1,2 +1,0 @@
-model,architecture,best_val_f1,test_f1,test_precision,test_recall,train_size,test_size
-MLP (embeddings + NSFW),385 → 256 → 64 → 1,0.5612,0.5725,0.4934,0.6818,1648,412
