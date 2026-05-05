@@ -8,6 +8,8 @@ AI character platforms raise significant safety concerns due to the harmful cont
 - Jialiang Yan
 
 ## File structure
+
+```
 ├── data/
 │   ├── annotated_with_nulls.json         # Raw LLM annotation output
 │   ├── best_models.pkl                   # Saved traditional classifier models
@@ -26,3 +28,4 @@ AI character platforms raise significant safety concerns due to the harmful cont
 ├── 4_training.py                         # Traditional classifier training
 ├── 4_trainingNN.py                       # MLP training
 └── README.md
+```
