@@ -1,19 +1,18 @@
 """
-ML Training Pipeline
-====================
-Trains 6 classifiers on encoded_with_nulls.feather and
-encoded_without_nulls.feather, following the paper (Sec VI-A):
-
-  - 80/20 stratified train-test split
-  - Training set class balancing (3 strategies: weights, SMOTE, undersample)
-  - 5-Fold Cross Validation + Grid Search
-  - Models: Random Forest, Gradient Boosting, Logistic Regression,
-            SVM, KNN, Gaussian Naive Bayes
-  - Metric: F1-score (paper baseline: 0.81 with Gradient Boosting)
-
-Outputs:
-  results_summary.csv   — F1 / precision / recall per model x dataset
-  best_models.pkl       — dict of best fitted estimators
+ML Training Pipeline: encoded_with/without_nulls.feather -> results_summary.csv + best_models.pkl
+Purpose: Train and evaluate classifiers to predict character unsafety (Safer=0 / Unsafer=1)
+Steps:
+  1. Load both encoded feather files; stratified 80/20 train/test split (test set never rebalanced)
+  2. Balance training set via chosen strategy (default: SMOTE):
+       - weights    : class_weight='balanced' on supported models; undersample fallback for KNN/GNB/GB
+       - smote      : oversample minority class synthetically (imbalanced-learn)
+       - undersample: downsample majority class to match minority size
+  3. For each dataset x each of 6 models (RF, GB, LR, SVM, KNN, GNB):
+       - GridSearchCV with 5-fold stratified CV, optimizing F1
+       - Refit best params on full (balanced) training set
+       - Evaluate on held-out test set: F1, precision, recall, confusion matrix
+  4. Collect all results into summary table; identify best model by test F1
+  5. Save results -> results_summary.csv, best estimators -> best_models.pkl
 """
 
 import os
@@ -44,7 +43,7 @@ except ImportError:
 
 warnings.filterwarnings('ignore')
 
-# ─── PATHS ───────────────────────────────────────────────────────────────────
+#Paths
 DATA_PATH = os.path.join('.', 'data')
 
 INPUT_FILES = {
@@ -58,28 +57,9 @@ RANDOM_STATE = 42
 TEST_SIZE    = 0.20
 N_CV_FOLDS   = 5
 
-# ─── BALANCING STRATEGY ──────────────────────────────────────────────────────
-# Choose ONE of: 'weights' | 'smote' | 'undersample'
-#
-#   weights     — pass class_weight='balanced' to each model (recommended).
-#                 No data is lost. Penalises minority-class errors more heavily.
-#                 Works with RF, GB, LR, SVM. GNB/KNN do not support it natively
-#                 (falls back to sample_weight where possible, else undersample).
-#
-#   smote       — synthetically creates new minority rows before training.
-#                 Requires: pip install imbalanced-learn
-#                 Keeps full majority class, expands minority. Best for very
-#                 imbalanced data but adds synthetic noise.
-#
-#   undersample — removes majority rows until classes are equal (paper method).
-#                 Simplest, but shrinks your dataset.
 BALANCE_STRATEGY = 'smote'
 
-# ─── MODEL DEFINITIONS ───────────────────────────────────────────────────────
-# Each entry: (name, estimator, param_grid)
-# class_weight is injected automatically for models that support it
-# when BALANCE_STRATEGY == 'weights'.
-
+#Model Definitions
 def get_models(strategy):
     """Return list of (name, estimator, param_grid) tuples."""
 
@@ -98,7 +78,6 @@ def get_models(strategy):
         (
             'Gradient Boosting',
             GradientBoostingClassifier(random_state=RANDOM_STATE),
-            # GB does not support class_weight; use sample_weight in fit (handled below)
             {
                 'n_estimators':  [100, 200],
                 'learning_rate': [0.05, 0.1],
@@ -124,7 +103,6 @@ def get_models(strategy):
         (
             'KNN',
             KNeighborsClassifier(n_jobs=-1),
-            # KNN has no class_weight; class balance handled via resampling fallback
             {
                 'n_neighbors': [3, 5, 7, 11],
                 'weights':     ['uniform', 'distance'],
@@ -133,7 +111,6 @@ def get_models(strategy):
         (
             'Gaussian Naive Bayes',
             GaussianNB(),
-            # GNB has no class_weight; class balance handled via resampling fallback
             {
                 'var_smoothing': [1e-9, 1e-8, 1e-7],
             }
@@ -142,7 +119,7 @@ def get_models(strategy):
     return models
 
 
-# ─── BALANCING HELPERS ───────────────────────────────────────────────────────
+#Balancing Features
 
 def balance_undersample(X_train, y_train):
     """Undersample majority class to match minority class size."""
@@ -176,16 +153,8 @@ def get_sample_weight(y_train):
     return y_train.map(weight_map).values
 
 
-# ─── TRAINING FUNCTION ───────────────────────────────────────────────────────
-
+#Training
 def train_and_evaluate(dataset_label, X_train_raw, X_test, y_train_raw, y_test, strategy):
-    """
-    For each model:
-      1. Balance training set according to strategy
-      2. GridSearchCV with 5-fold CV
-      3. Evaluate on held-out test set
-    Returns a list of result dicts and a dict of best estimators.
-    """
     print(f"\n{'─'*60}")
     print(f"Dataset: {dataset_label}  |  Strategy: {strategy}")
     print(f"Train: {len(y_train_raw)} samples  |  Test: {len(y_test)} samples")
@@ -201,7 +170,7 @@ def train_and_evaluate(dataset_label, X_train_raw, X_test, y_train_raw, y_test, 
     for name, estimator, param_grid in models:
         print(f"\n  [{name}]")
 
-        # ── 1. Balance training data ──────────────────────────────────────
+        #Balance training data
         no_weight_models = {'KNN', 'Gaussian Naive Bayes', 'Gradient Boosting'}
 
         if strategy == 'undersample':
@@ -212,13 +181,10 @@ def train_and_evaluate(dataset_label, X_train_raw, X_test, y_train_raw, y_test, 
             X_train, y_train = balance_smote(X_train_raw.copy(), y_train_raw.copy())
             fit_params = {}
 
-        else:  # 'weights'
+        else: 
             X_train, y_train = X_train_raw.copy(), y_train_raw.copy()
-            # For models that don't support class_weight, fall back to sample_weight
             if name in no_weight_models:
                 sw = get_sample_weight(y_train)
-                # GridSearchCV doesn't support sample_weight directly for all models
-                # so we undersample instead for these models
                 X_train, y_train = balance_undersample(X_train, y_train)
                 fit_params = {}
                 print(f"    Note: {name} does not support class_weight — used undersample fallback")
@@ -227,14 +193,14 @@ def train_and_evaluate(dataset_label, X_train_raw, X_test, y_train_raw, y_test, 
 
         print(f"    Balanced train size: {len(y_train)}  dist: {dict(pd.Series(y_train).value_counts())}")
 
-        # ── 2. Grid Search + Cross Validation ────────────────────────────
+        #Grid Search + Cross Validation
         grid_search = GridSearchCV(
             estimator  = estimator,
             param_grid = param_grid,
             cv         = cv,
-            scoring    = 'f1',          # optimise for F1 (paper metric)
+            scoring    = 'f1',          
             n_jobs     = -1,
-            refit      = True,          # refit best model on full training set
+            refit      = True,          
             verbose    = 0,
         )
         grid_search.fit(X_train, y_train)
@@ -244,7 +210,7 @@ def train_and_evaluate(dataset_label, X_train_raw, X_test, y_train_raw, y_test, 
         print(f"    Best CV F1:  {best_cv_f1:.4f}")
         print(f"    Best params: {best_params}")
 
-        # ── 3. Evaluate on held-out test set ─────────────────────────────
+        #Evaluate on test set
         best_model = grid_search.best_estimator_
         y_pred = best_model.predict(X_test)
 
@@ -275,8 +241,6 @@ def train_and_evaluate(dataset_label, X_train_raw, X_test, y_train_raw, y_test, 
     return all_results, best_estimators
 
 
-# ─── ENTRY POINT ─────────────────────────────────────────────────────────────
-
 if __name__ == '__main__':
 
     all_results     = []
@@ -293,9 +257,7 @@ if __name__ == '__main__':
         X = df.drop(columns=['bot', 'y'])
         y = df['y']
 
-        # ── 80/20 stratified split ────────────────────────────────────────
-        # stratify=y ensures both splits preserve the safer/unsafer ratio.
-        # Test set is NOT rebalanced — it reflects real-world distribution.
+        #80/20 stratified split
         X_train, X_test, y_train, y_test = train_test_split(
             X, y,
             test_size    = TEST_SIZE,
@@ -315,7 +277,7 @@ if __name__ == '__main__':
         all_results.extend(results)
         all_best_models.update(best_models)
 
-    # ── Summary table ─────────────────────────────────────────────────────
+    #Output
     results_df = pd.DataFrame(all_results)
 
     print(f"\n{'='*60}")
@@ -330,7 +292,7 @@ if __name__ == '__main__':
           f"Test F1={best_row['test_f1']}  CV F1={best_row['best_cv_f1']}")
     print(f"  Params: {best_row['best_params']}")
 
-    # ── Save ──────────────────────────────────────────────────────────────
+    #Save results
     results_df.to_csv(RESULTS_PATH, index=False)
     print(f"\nResults saved -> {RESULTS_PATH}")
 
