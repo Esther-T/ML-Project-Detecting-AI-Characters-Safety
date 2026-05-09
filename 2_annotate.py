@@ -1,11 +1,18 @@
 """
-annotate.py
------------
+LLM Annotation Pipeline: ml_df.feather -> annotated_with_nulls.json
+Purpose: Annotate each character across 6 dimensions using Gemini API
+Steps:
+  1. Load ml_df.feather and taxonomies (YAML) + prompts (TXT) from disk
+  2. Compute per-character unsafety score -> bot_df, normalize by platform mean, assign y labels -> ml_df
+  3. Annotate each character via Gemini API across 6 dimensions:
+     demographic, occupation, space, relationship, favorability, personality
+  4. Checkpoint results incrementally to JSON; skip already-annotated characters on resume
+  5. Drop complete failures (all 6 fields null) and fill partial nulls with field defaults
+  6. Save cleaned annotations -> annotated_with_nulls.json
 Usage:
-    pip install pandas numpy pyyaml pyarrow python-dotenv google-genai tqdm
-
-    Create a .env file in the same directory as this script with:
-        GEMINI_API_KEYS=key1,key2,key3,...
+    1. pip install pandas numpy pyyaml pyarrow python-dotenv google-genai tqdm
+    2. Create a .env file in the same directory as this script with:
+       GEMINI_API_KEYS=key1,key2,key3,...
 """
 
 import os
@@ -19,7 +26,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-# 1. CONFIG 
+#Paths
 BASE_PATH      = os.path.expanduser("~/ml_project")         
 DATA_PATH      = os.path.join(BASE_PATH, "data")
 TAXONOMY_PATH  = os.path.join(BASE_PATH, "taxonomies")
@@ -28,13 +35,13 @@ PROMPT_PATH    = os.path.join(BASE_PATH, "prompts")
 CHECKPOINT_PATH       = os.path.join(DATA_PATH, "annotated_checkpoint.json") 
 CLEANED_WITH_NULLS    = os.path.join(DATA_PATH, "annotated_with_nulls.json") 
 
-# 2. LOAD DATASET
-file_path = os.path.join(DATA_PATH, "ml_df_part1.feather") # replace with ml_df.part2.feather
+#Load Dataset
+file_path = os.path.join(DATA_PATH, "ml_df_part1.feather") #replace with ml_df.part2.feather
 df = pd.read_feather(file_path)
 print("Dataset loaded:")
 print(df.info())
 
-# 3. LOAD TAXONOMIES
+#Load Taxonomies
 yaml_files = {}
 for filename in sorted(os.listdir(TAXONOMY_PATH)):
     if filename.endswith(".yaml"):
@@ -49,7 +56,7 @@ space_taxonomy        = yaml_files["IX_Space.yaml"]
 relationship_taxonomy = yaml_files["X_Relationship.yaml"]
 personality_taxonomy  = yaml_files["XI_Personality.yaml"]
 
-# 4. LOAD PROMPTS
+#Load Prompts
 prompt_files = {}
 for filename in sorted(os.listdir(PROMPT_PATH)):
     if filename.endswith(".txt"):
@@ -67,7 +74,7 @@ personality_prompt  = prompt_files["personality_prompt.txt"]
 
 print("\nAll external data loaded successfully!")
 
-# 5. PREPROCESS
+#Preprocess
 df["is_unsafe"] = df["judge_score"] >= 3
 
 bot_df = df.groupby("bot").agg(
@@ -105,7 +112,7 @@ print(f"Characters kept for ML training: {len(ml_df)}")
 print("\nDistribution of y:")
 print(ml_df["y"].value_counts())
 
-# 6. API KEY SETUP  (reads from .env file)
+#Load API key
 load_dotenv() 
 
 api_keys_env = os.getenv("GEMINI_API_KEYS", "")
@@ -124,7 +131,7 @@ key_index = 0
 
 print(f"\nLoaded {len(API_KEYS)} API key(s), model: {MODEL_NAME}")
 
-# 7. ANNOTATION HELPERS
+#Annotation Helpers
 def prepare_character_input(row):
     character = {
         "tags": row["tags"],
@@ -186,7 +193,7 @@ def annotate_character(row):
         "personality":  call_llm(personality_prompt,  character_input, personality_taxonomy),
     }
 
-# 8. RUN ANNOTATION WITH CHECKPOINTING
+#8. Run annotations with checkpointing
 if os.path.exists(CHECKPOINT_PATH):
     with open(CHECKPOINT_PATH, "r") as f:
         all_annotations = json.load(f)
@@ -224,7 +231,7 @@ print(f"Total annotated so far: {len(all_annotations)}")
 print(f"Failed in this batch:   {len(failed_bots)}")
 print(f"Remaining after batch:  {len(ml_df) - len(all_annotations)}")
 
-# 9. CLEAN ANNOTATIONS
+#Clean the annotations
 ALL_FIELDS = ["demographic", "occupation", "space", "relationship", "favorability", "personality"]
 
 with open(CHECKPOINT_PATH, "r") as f:
