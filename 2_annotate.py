@@ -193,7 +193,7 @@ def annotate_character(row):
         "personality":  call_llm(personality_prompt,  character_input, personality_taxonomy),
     }
 
-#8. Run annotations with checkpointing
+#Run annotations with checkpointing
 if os.path.exists(CHECKPOINT_PATH):
     with open(CHECKPOINT_PATH, "r") as f:
         all_annotations = json.load(f)
