@@ -1,14 +1,19 @@
 """
-Neural Network Training Pipeline
-Architecture:
-  - Input: sentence embeddings (description + tags + scenario) + NSFW flag
-  - Embedding model: all-MiniLM-L6-v2 → 384-dim vector
-  - Concat NSFW → 385-dim vector
-  - MLP: [256 → 64 → 1]
-  - Class imbalance: weighted BCE loss (no undersampling — preserves all rows)
+Neural Network Training Pipeline: ml_df.feather -> nn_results_summary.csv + nn_best_model.pkl
+Purpose: Train an MLP on sentence embeddings to predict character unsafety (Safer=0 / Unsafer=1)
+Steps:
+  1. Load ml_df.feather and encode description, scenario, tags per character via all-MiniLM-L6-v2 -> 384-dim normalized embedding
+  2. Concatenate NSFW flag -> 385-dim input vector
+  3. Stratified 80/20 train/test split and further split train -> 87.5/12.5 train/val
+  4. Compute pos_weight (n_neg / n_pos) -> weighted BCEWithLogitsLoss (no undersampling)
+  5. Train MLP original version [385-> 256 ->64-> 1] and (fine-tuned version) [385 ->128 -> 32 -> 1] with BatchNorm + Dropout:
+       -AdamW optimizer + cosine LR schedule
+       -Early stopping on val F1 (patience=5); restore best weights
+  6. Evaluate on held-out test set: F1, precision, recall, confusion matrix
+  7. Save results -> nn_results_summary.csv, model -> nn_best_model.pkl
 
-Install dependencies:
-  pip install sentence-transformers torch scikit-learn pandas pyarrow
+Usage:
+Install dependencies: pip install sentence-transformers torch scikit-learn pandas pyarrow
 """
 
 import os
@@ -25,18 +30,19 @@ from sklearn.metrics import (
 )
 from sentence_transformers import SentenceTransformer
 
-# ─── CONFIGURATION ────────────────────────────────────────────────────────────
-
+#Configurations
 RANDOM_STATE    = 42
 TEST_SIZE       = 0.20
 BATCH_SIZE      = 32
 MAX_EPOCHS      = 100
-PATIENCE        = 5 # initially -> 10
-LR              = 3e-4 # initially -> 1e-3
+# initially PATIENCE is 10
+PATIENCE        = 5 
+# initially LR is 1e-3
+LR              = 3e-4
 WEIGHT_DECAY    = 1e-4
 EMBEDDING_MODEL = 'all-MiniLM-L6-v2'
 
-# Update these paths to match your local setup
+#Paths
 DATA_PATH    = './data'
 ML_DF_PATH   = os.path.join(DATA_PATH, 'ml_df.feather')
 RESULTS_PATH = os.path.join(DATA_PATH, 'nn_results_summary.csv')
@@ -48,13 +54,9 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"Using device: {device}")
 
 
-# ─── STEP 1: GENERATE TEXT EMBEDDINGS ─────────────────────────────────────────
+#Generate Text Embeddings
 
 def generate_embeddings(ml_df):
-    """
-    Combine description + scenario + tags into one text string per character,
-    then encode with sentence-transformers into a 384-dim vector.
-    """
     print("Generating embeddings...")
     model = SentenceTransformer(EMBEDDING_MODEL)
 
@@ -87,12 +89,7 @@ def generate_embeddings(ml_df):
     return embeddings
 
 
-# ─── STEP 2: DATASET ──────────────────────────────────────────────────────────
-
 class CharacterDataset(Dataset):
-    """
-    Concatenates embeddings (384-dim) with NSFW flag (1-dim) → 385-dim input.
-    """
     def __init__(self, embeddings, nsfw, y):
         nsfw_col = np.array(nsfw).reshape(-1, 1).astype(np.float32)
         X = np.concatenate([embeddings, nsfw_col], axis=1)
@@ -106,16 +103,10 @@ class CharacterDataset(Dataset):
         return self.X[idx], self.y[idx]
 
 
-# ─── STEP 3: MODEL ────────────────────────────────────────────────────────────
+#Build Model
 
 class MLP(nn.Module):
-    """
-    Input (385) → Linear(256) → BatchNorm → ReLU → Dropout
-                → Linear(64)  → BatchNorm → ReLU → Dropout
-                → Linear(1)   → logit
-    Sigmoid is applied at inference only (fused into BCEWithLogitsLoss during training).
-    """
-    def __init__(self, input_dim, dropout=0.5): # dropout=0.5
+    def __init__(self, input_dim, dropout=0.5):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(input_dim, 128),
@@ -135,24 +126,17 @@ class MLP(nn.Module):
         return self.net(x).squeeze(1)
 
 
-# ─── STEP 4: WEIGHTED LOSS ────────────────────────────────────────────────────
-
+#Weighted Loss
 def compute_pos_weight(y_train):
-    """
-    pos_weight = n_negative / n_positive
-    Penalizes minority class (unsafer=1) errors proportionally more.
-    Keeps all training data — no undersampling needed.
-    """
     n_neg = (y_train == 0).sum()
     n_pos = (y_train == 1).sum()
     pos_weight = torch.tensor([n_neg / n_pos], dtype=torch.float).to(device)
-    print(f"  Class counts — safer(0): {n_neg}, unsafer(1): {n_pos}")
+    print(f"  Class counts -> safer(0): {n_neg}, unsafer(1): {n_pos}")
     print(f"  pos_weight: {pos_weight.item():.3f}")
     return pos_weight
 
 
-# ─── STEP 5: TRAINING LOOP ────────────────────────────────────────────────────
-
+#Training Loop
 def train_epoch(model, loader, optimizer, criterion):
     model.train()
     total_loss, all_preds, all_labels = 0, [], []
@@ -192,10 +176,6 @@ def eval_epoch(model, loader, criterion):
 
 
 def train_model(model, train_loader, val_loader, criterion):
-    """
-    AdamW optimizer + cosine LR schedule + early stopping.
-    Restores best weights when val F1 stops improving.
-    """
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=MAX_EPOCHS)
 
@@ -227,25 +207,20 @@ def train_model(model, train_loader, val_loader, criterion):
     return model, best_val_f1
 
 
-# ─── ENTRY POINT ──────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
 
-    # ── Load data ──────────────────────────────────────────────────────────────
     print("Loading data...")
     ml_df = pd.read_feather(ML_DF_PATH).reset_index(drop=True)
     print(f"  Shape: {ml_df.shape}")
     print(f"  Target dist: {dict(ml_df['y'].value_counts())}")
 
-    # ── Generate embeddings fresh every run (no cache) ─────────────────────────
     embeddings = generate_embeddings(ml_df)
 
-    # Sanity check — embeddings and ml_df must be the same length
     assert len(embeddings) == len(ml_df), (
         f"Size mismatch: embeddings={len(embeddings)}, ml_df={len(ml_df)}"
     )
 
-    # ── Prepare labels and NSFW ────────────────────────────────────────────────
     y    = ml_df['y'].values
     nsfw = ml_df['NSFW'].astype(int).values
 
@@ -253,7 +228,6 @@ if __name__ == '__main__':
     print(f"  + NSFW (1 dim)")
     print(f"  Total input dim: {embeddings.shape[1] + 1}")
 
-    # ── 80/20 stratified train/test split ──────────────────────────────────────
     idx = np.arange(len(y))
     idx_train, idx_test, y_train, y_test = train_test_split(
         idx, y,
@@ -268,7 +242,6 @@ if __name__ == '__main__':
     print(f"\n  Train: {len(y_train)} samples | Test: {len(y_test)} samples")
     print(f"  Train class dist: {dict(pd.Series(y_train).value_counts())}")
 
-    # ── Split train → train + val for early stopping ───────────────────────────
     idx_tr, idx_val, y_tr, y_val = train_test_split(
         np.arange(len(y_train)), y_train,
         test_size    = 0.125,
@@ -284,27 +257,23 @@ if __name__ == '__main__':
     val_loader   = DataLoader(val_ds,   batch_size=BATCH_SIZE, shuffle=False)
     test_loader  = DataLoader(test_ds,  batch_size=BATCH_SIZE, shuffle=False)
 
-    # ── Weighted loss ──────────────────────────────────────────────────────────
     print("\n  Computing class weights...")
     pos_weight = compute_pos_weight(y_train)
     criterion  = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
-    # ── Build model ────────────────────────────────────────────────────────────
-    input_dim = embeddings.shape[1] + 1   # 384 + 1 = 385
+    input_dim = embeddings.shape[1] + 1 
     model     = MLP(input_dim=input_dim).to(device)
     print(f"\n  Model architecture:")
     print(f"    Input:  {input_dim} dims  (embeddings + NSFW)")
-    print(f"    Layer1: 256 units  (BatchNorm + ReLU + Dropout)")
-    print(f"    Layer2:  64 units  (BatchNorm + ReLU + Dropout)")
-    print(f"    Output:   1 unit   (logit)")
+    print(f"    Layer1(original): 256 units  (BatchNorm + ReLU + Dropout)")
+    print(f"    Layer2(original):  64 units  (BatchNorm + ReLU + Dropout)")
+    print(f"    Output(original):   1 unit   (logit)")
     print(f"  Total parameters: {sum(p.numel() for p in model.parameters()):,}")
 
-    # ── Train ──────────────────────────────────────────────────────────────────
     print(f"\n  Training (max {MAX_EPOCHS} epochs, early stopping patience={PATIENCE})...")
     model, best_val_f1 = train_model(model, train_loader, val_loader, criterion)
     print(f"\n  Best validation F1: {best_val_f1:.4f}")
 
-    # ── Evaluate on test set ───────────────────────────────────────────────────
     _, test_f1, y_pred, y_true = eval_epoch(model, test_loader, criterion)
     test_precision = precision_score(y_true, y_pred, zero_division=0)
     test_recall    = recall_score(y_true, y_pred, zero_division=0)
@@ -318,14 +287,13 @@ if __name__ == '__main__':
     print(f"\n{classification_report(y_true, y_pred, target_names=['Safer', 'Unsafer'])}")
     print(f"Confusion matrix:\n{confusion_matrix(y_true, y_pred)}")
 
-    print(f"\n  ── Baseline Reference ──")
+    print(f"\n Baseline Reference")
     print(f"  Random Forest (tree baseline): F1 = 0.6091")
-    print(f"  Paper (Wei et al. 2025):       F1 = 0.81")
+    print(f"  Paper:       F1 = 0.81")
 
-    # ── Save results ──────────────────────────────────────────────────────────
     results = pd.DataFrame([{
         'model':          'MLP (embeddings + NSFW)',
-        'architecture':   '385 → 256 → 64 → 1',
+        'architecture':   '385 -> 256 -> 64 -> 1',
         'best_val_f1':    round(best_val_f1,    4),
         'test_f1':        round(test_f1,         4),
         'test_precision': round(test_precision,  4),
