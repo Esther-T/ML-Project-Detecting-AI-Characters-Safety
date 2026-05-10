@@ -2,7 +2,7 @@
 LLM Annotation Pipeline: ml_df.feather -> annotated_with_nulls.json
 Purpose: Annotate each character across 6 dimensions using Gemini API
 Steps:
-  1. Load ml_df.feather and taxonomies (YAML) + prompts (TXT) from disk
+  1. Load ml_df.feather and taxonomies + prompts files
   2. Compute per-character unsafety score -> bot_df, normalize by platform mean, assign y labels -> ml_df
   3. Annotate each character via Gemini API across 6 dimensions:
      demographic, occupation, space, relationship, favorability, personality
