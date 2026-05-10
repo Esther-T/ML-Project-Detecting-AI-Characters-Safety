@@ -10,9 +10,9 @@ Steps:
        - space        : one-hot category + one-hot sub_category
        - relationship : multi-hot category + multi-hot sub_category (multiple entries)
        - personality  : multi-hot category + multi-hot sub_category (multiple entries)
-       - favorability : bucket raw score (-1 to 1) -> Like/Neutral/Dislike -> one-hot
+       - favorability : bucket raw score -> Like/Neutral/Dislike -> one-hot
        - tags         : multi-hot, filtered to tags appearing in >= 5% of characters
-       - NSFW/group   : direct binary (2 cols)
+       - NSFW/group   : binary
   4. Concatenate all encoded features -> sparse binary feature matrix X
   5. Run side-by-side comparison of with_nulls vs without_nulls (samples, features, ratio)
   6. Save both encoded datasets -> encoded_with/without_nulls.feather
